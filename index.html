@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prominence Analyser</title>
+    <script src="https://unpkg.com/geotiff@2.0.7/dist-browser/geotiff.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        overflow: hidden;
+      }
+
+      .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        text-align: center;
+      }
+
+      .header h1 {
+        font-size: 2em;
+        margin-bottom: 10px;
+      }
+
+      .content {
+        padding: 30px;
+      }
+
+      .input-group {
+        margin-bottom: 20px;
+      }
+
+      .input-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+        color: #333;
+      }
+
+      .input-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+      }
+
+      input[type="number"] {
+        width: 100%;
+        padding: 12px;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: border-color 0.3s;
+      }
+
+      input[type="number"]:focus {
+        outline: none;
+        border-color: #667eea;
+      }
+
+      button {
+        width: 100%;
+        padding: 15px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          transform 0.2s,
+          box-shadow 0.2s;
+        margin-top: 20px;
+      }
+
+      button:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .loading {
+        display: none;
+        text-align: center;
+        padding: 30px;
+      }
+
+      .loading.active {
+        display: block;
+      }
+
+      .spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #667eea;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 20px;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      .results {
+        display: none;
+        margin-top: 30px;
+        padding: 25px;
+        background: #f8f9fa;
+        border-radius: 10px;
+        border-left: 5px solid #667eea;
+      }
+
+      .results.active {
+        display: block;
+      }
+
+      .results h2 {
+        color: #667eea;
+        margin-bottom: 20px;
+        font-size: 1.5em;
+      }
+
+      .result-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 12px 0;
+        border-bottom: 1px solid #e0e0e0;
+      }
+
+      .result-item:last-child {
+        border-bottom: none;
+      }
+
+      .result-label {
+        font-weight: 600;
+        color: #555;
+      }
+
+      .result-value {
+        color: #333;
+        font-family: "Courier New", monospace;
+      }
+
+      .coordinates-box {
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 20px;
+        border: 2px dashed #667eea;
+      }
+
+      .coordinates-box h3 {
+        color: #667eea;
+        margin-bottom: 10px;
+      }
+
+      .coord-line {
+        margin: 8px 0;
+        font-family: "Courier New", monospace;
+        font-size: 14px;
+      }
+
+      .error {
+        display: none;
+        background: #fee;
+        color: #c33;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 20px;
+        border-left: 5px solid #c33;
+      }
+
+      .error.active {
+        display: block;
+      }
+
+      .info-box {
+        background: #e3f2fd;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        border-left: 5px solid #2196f3;
+      }
+
+      .info-box p {
+        color: #1565c0;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>🏔️ Prominence Analyzer</h1>
+        <p>Find the most dramatic peaks in Australian terrain</p>
+      </div>
+
+      <div class="content">
+        <div class="info-box">
+          <p>
+            <strong>How it works:</strong> Enter a bounding box coordinates and
+            maximum search distance. The tool will fetch elevation data from
+            Geoscience Australia and find the peak with the greatest prominence
+            drop within your specified radius.
+          </p>
+        </div>
+
+        <div class="input-group">
+          <label>Bounding Box Coordinates (Decimal Degrees)</label>
+          <div class="input-row">
+            <input
+              type="number"
+              id="minLon"
+              placeholder="Min Longitude"
+              step="any"
+              value="152.982559"
+            />
+            <input
+              type="number"
+              id="minLat"
+              placeholder="Min Latitude"
+              step="any"
+              value="-28.515159"
+            />
+          </div>
+          <div class="input-row" style="margin-top: 10px">
+            <input
+              type="number"
+              id="maxLon"
+              placeholder="Max Longitude"
+              step="any"
+              value="153.443985"
+            />
+            <input
+              type="number"
+              id="maxLat"
+              placeholder="Max Latitude"
+              step="any"
+              value="-28.172507"
+            />
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="maxDistance">Maximum Search Distance (meters)</label>
+          <input
+            type="number"
+            id="maxDistance"
+            placeholder="e.g., 1000"
+            value="1000"
+            min="100"
+            max="10000"
+          />
+        </div>
+
+        <button id="analyzeBtn" onclick="analyzeTerrain()">
+          🔍 Analyze Terrain
+        </button>
+
+        <div class="loading" id="loading">
+          <div class="spinner"></div>
+          <p>Fetching elevation data and analyzing terrain...</p>
+        </div>
+
+        <div class="error" id="error"></div>
+
+        <div class="results" id="results">
+          <h2>🏆 Analysis Results</h2>
+
+          <div class="result-item">
+            <span class="result-label">Peak Elevation:</span>
+            <span class="result-value" id="peakElev">-</span>
+          </div>
+
+          <div class="result-item">
+            <span class="result-label">Peak Coordinates:</span>
+            <span class="result-value" id="peakCoords">-</span>
+          </div>
+
+          <div class="result-item">
+            <span class="result-label">Base Elevation:</span>
+            <span class="result-value" id="baseElev">-</span>
+          </div>
+
+          <div class="result-item">
+            <span class="result-label">Base Coordinates:</span>
+            <span class="result-value" id="baseCoords">-</span>
+          </div>
+
+          <div class="result-item">
+            <span class="result-label">Prominence Drop:</span>
+            <span class="result-value" id="prominence">-</span>
+          </div>
+
+          <div class="result-item">
+            <span class="result-label">Distance:</span>
+            <span class="result-value" id="distance">-</span>
+          </div>
+
+          <div class="result-item">
+            <span class="result-label">Gradient:</span>
+            <span class="result-value" id="gradient">-</span>
+          </div>
+
+          <div class="result-item">
+            <span class="result-label">Slope Angle:</span>
+            <span class="result-value" id="slopeAngle">-</span>
+          </div>
+
+          <div class="coordinates-box">
+            <h3>📍 Quick Copy Coordinates</h3>
+            <div class="coord-line">
+              <strong>Peak:</strong> <span id="copyPeak">-</span>
+            </div>
+            <div class="coord-line">
+              <strong>Base:</strong> <span id="copyBase">-</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      async function analyzeTerrain() {
+        const loading = document.getElementById("loading");
+        const results = document.getElementById("results");
+        const error = document.getElementById("error");
+        const btn = document.getElementById("analyzeBtn");
+
+        // Reset display
+        results.classList.remove("active");
+        error.classList.remove("active");
+        loading.classList.add("active");
+        btn.disabled = true;
+
+        try {
+          // Get input values
+          const minLon = parseFloat(document.getElementById("minLon").value);
+          const minLat = parseFloat(document.getElementById("minLat").value);
+          const maxLon = parseFloat(document.getElementById("maxLon").value);
+          const maxLat = parseFloat(document.getElementById("maxLat").value);
+          const maxDistance = parseInt(
+            document.getElementById("maxDistance").value,
+          );
+
+          // Validate inputs
+          if (
+            isNaN(minLon) ||
+            isNaN(minLat) ||
+            isNaN(maxLon) ||
+            isNaN(maxLat) ||
+            isNaN(maxDistance)
+          ) {
+            throw new Error("Please fill in all fields with valid numbers");
+          }
+
+          if (minLon >= maxLon || minLat >= maxLat) {
+            throw new Error(
+              "Invalid bounding box: min values must be less than max values",
+            );
+          }
+
+          // Fetch DEM data
+          console.log("Fetching DEM data...");
+          const wcsUrl =
+            "https://services.ga.gov.au/gis/services/DEM_SRTM_1Second_2024/MapServer/WCSServer";
+          const params = new URLSearchParams({
+            service: "WCS",
+            version: "1.0.0",
+            request: "GetCoverage",
+            coverage: "1",
+            crs: "EPSG:4326",
+            bbox: `${minLon},${minLat},${maxLon},${maxLat}`,
+            format: "GeoTIFF",
+            resx: "0.000277777777778",
+            resy: "0.000277777777778",
+            interpolation: "NEAREST",
+          });
+
+          const response = await fetch(`${wcsUrl}?${params}`);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(
+              `Server error: ${response.status} - ${errorText.substring(0, 200)}`,
+            );
+          }
+
+          const arrayBuffer = await response.arrayBuffer();
+          console.log("DEM data fetched, processing...");
+
+          // Parse GeoTIFF
+          const tiff = await GeoTIFF.fromArrayBuffer(arrayBuffer);
+          const image = await tiff.getImage();
+          const rasters = await image.readRasters();
+          const elevationData = rasters[0];
+          const width = image.getWidth();
+          const height = image.getHeight();
+          const tiePoint = image.getTiePoints()[0];
+          const pixelScale = image.getFileDirectory().ModelPixelScale;
+
+          // Convert to 2D array
+          const elevationGrid = [];
+          for (let row = 0; row < height; row++) {
+            const rowData = [];
+            for (let col = 0; col < width; col++) {
+              const idx = row * width + col;
+              let val = elevationData[idx];
+              // Filter out invalid values
+              if (val < -50) val = NaN;
+              rowData.push(val);
+            }
+            elevationGrid.push(rowData);
+          }
+
+          console.log("Processing terrain data...");
+
+          // Calculate cell size in meters
+          const cellSizeX = Math.abs(pixelScale[0]) * 111000;
+          const pixelRadius = Math.max(1, Math.floor(maxDistance / cellSizeX));
+
+          // Find maximum prominence
+          let maxProminence = -Infinity;
+          let bestPeak = null;
+
+          for (let row = 0; row < height; row++) {
+            for (let col = 0; col < width; col++) {
+              const peakElev = elevationGrid[row][col];
+              if (isNaN(peakElev)) continue;
+
+              // Find minimum elevation within radius
+              let minElev = Infinity;
+              let minRow = row;
+              let minCol = col;
+
+              const rowStart = Math.max(0, row - pixelRadius);
+              const rowEnd = Math.min(height - 1, row + pixelRadius);
+              const colStart = Math.max(0, col - pixelRadius);
+              const colEnd = Math.min(width - 1, col + pixelRadius);
+
+              for (let r = rowStart; r <= rowEnd; r++) {
+                for (let c = colStart; c <= colEnd; c++) {
+                  // Check if within circular radius
+                  const dr = r - row;
+                  const dc = c - col;
+                  if (dr * dr + dc * dc <= pixelRadius * pixelRadius) {
+                    const elev = elevationGrid[r][c];
+                    if (!isNaN(elev) && elev < minElev) {
+                      minElev = elev;
+                      minRow = r;
+                      minCol = c;
+                    }
+                  }
+                }
+              }
+
+              if (minElev === Infinity) continue;
+
+              const prominence = peakElev - minElev;
+
+              if (prominence > maxProminence) {
+                maxProminence = prominence;
+
+                // Calculate coordinates
+                const peakLon = tiePoint.x + (col + 0.5) * pixelScale[0];
+                const peakLat = tiePoint.y - (row + 0.5) * pixelScale[1];
+                const baseLon = tiePoint.x + (minCol + 0.5) * pixelScale[0];
+                const baseLat = tiePoint.y - (minRow + 0.5) * pixelScale[1];
+
+                // Calculate distance
+                const dx =
+                  (baseLon - peakLon) *
+                  111000 *
+                  Math.cos(Math.radians((peakLat + baseLat) / 2));
+                const dy = (baseLat - peakLat) * 111000;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                bestPeak = {
+                  peakElev,
+                  peakLat,
+                  peakLon,
+                  baseElev: minElev,
+                  baseLat,
+                  baseLon,
+                  prominence,
+                  distance,
+                };
+              }
+            }
+          }
+
+          if (!bestPeak) {
+            throw new Error(
+              "No valid terrain data found in the specified area",
+            );
+          }
+
+          // Calculate additional metrics
+          const gradient = (bestPeak.prominence / bestPeak.distance) * 100;
+          const slopeAngle = Math.degrees(
+            Math.atan(bestPeak.prominence / bestPeak.distance),
+          );
+
+          // Display results
+          document.getElementById("peakElev").textContent =
+            `${bestPeak.peakElev.toFixed(1)} m`;
+          document.getElementById("peakCoords").textContent =
+            `${bestPeak.peakLat.toFixed(6)}°, ${bestPeak.peakLon.toFixed(6)}°`;
+          document.getElementById("baseElev").textContent =
+            `${bestPeak.baseElev.toFixed(1)} m`;
+          document.getElementById("baseCoords").textContent =
+            `${bestPeak.baseLat.toFixed(6)}°, ${bestPeak.baseLon.toFixed(6)}°`;
+          document.getElementById("prominence").textContent =
+            `${bestPeak.prominence.toFixed(1)} m`;
+          document.getElementById("distance").textContent =
+            `${bestPeak.distance.toFixed(1)} m`;
+          document.getElementById("gradient").textContent =
+            `${gradient.toFixed(2)}%`;
+          document.getElementById("slopeAngle").textContent =
+            `${slopeAngle.toFixed(2)}°`;
+          document.getElementById("copyPeak").textContent =
+            `${bestPeak.peakLat.toFixed(6)}, ${bestPeak.peakLon.toFixed(6)}`;
+          document.getElementById("copyBase").textContent =
+            `${bestPeak.baseLat.toFixed(6)}, ${bestPeak.baseLon.toFixed(6)}`;
+
+          results.classList.add("active");
+          console.log("Analysis complete!");
+        } catch (err) {
+          console.error("Error:", err);
+          error.textContent = `❌ Error: ${err.message}`;
+          error.classList.add("active");
+        } finally {
+          loading.classList.remove("active");
+          btn.disabled = false;
+        }
+      }
+
+      // Helper functions
+      Math.radians = function (degrees) {
+        return (degrees * Math.PI) / 180;
+      };
+
+      Math.degrees = function (radians) {
+        return (radians * 180) / Math.PI;
+      };
+    </script>
+  </body>
+</html>
